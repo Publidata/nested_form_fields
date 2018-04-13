@@ -18,6 +18,7 @@ module ActionView::Helpers
       fields_options[:wrapper_tag] ||= :fieldset
       fields_options[:wrapper_options] ||= {}
       fields_options[:namespace] = fields_options[:parent_builder].options[:namespace]
+      fields_options[:abstract] ||= false
 
       return fields_for_has_many_association_with_template(record_name, record_object, fields_options, block)
     end
@@ -49,7 +50,7 @@ module ActionView::Helpers
       args << ''
       args << { class: "#{html_class.empty? ? '' : html_class} remove_nested_fields_link",
                 data: { delete_association_field_name: delete_association_field_name,
-                        object_class: @object.class.name.underscore.downcase }.merge(html_data)
+                        object_class: options[:abstract] ? @object.to_s.to_sym : @object.class.name.underscore.downcase }.merge(html_data)
               }.merge(html_options)
 
       @template.link_to *args, &block
@@ -89,9 +90,14 @@ module ActionView::Helpers
     def nested_model_template name, association_name, options, block
       @template.content_tag( :template, id: template_id(association_name)) do
         nested_fields_wrapper(association_name, options[:wrapper_tag], options[:legend], options[:wrapper_options]) do
-          association_class = (options[:class_name] || object.public_send(association_name).klass.name).to_s.classify.constantize
+          if options[:abstract]
+            association_class = Struct.new(:to_s, :persisted?).new(association_name, false)
+            options[:include_id] = false
+          else
+            association_class = (options[:class_name] || object.public_send(association_name).klass.name).to_s.classify.constantize.new
+          end
           fields_for_nested_model("#{name}[#{index_placeholder(association_name)}]",
-                                   association_class.new,
+                                   association_class,
                                    options, block)
         end
       end
@@ -102,7 +108,7 @@ module ActionView::Helpers
     end
 
     def association_path association_name
-      "#{object_name.gsub('][','_').gsub(/_attributes/,'').sub('[','_').sub(']','')}_#{association_name}"
+      options[:abstract] ? "#{object_name}_#{association_name}" : "#{object_name.gsub('][','_').gsub(/_attributes/,'').sub('[','_').sub(']','')}_#{association_name}"
     end
 
     def index_placeholder association_name
