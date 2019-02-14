@@ -18,6 +18,7 @@ module ActionView::Helpers
       fields_options[:wrapper_tag] ||= :fieldset
       fields_options[:wrapper_options] ||= {}
       fields_options[:namespace] = fields_options[:parent_builder].options[:namespace]
+      fields_options[:abstract] ||= false
 
       return fields_for_has_many_association_with_template(record_name, record_object, fields_options, block)
     end
@@ -49,7 +50,7 @@ module ActionView::Helpers
       args << ''
       args << { class: "#{html_class.empty? ? '' : html_class} remove_nested_fields_link",
                 data: { delete_association_field_name: delete_association_field_name,
-                        object_class: @object.class.name.underscore.downcase }.merge(html_data)
+                        object_class: options[:abstract] ? @object.to_s.to_sym : @object.class.name.underscore.downcase }.merge(html_data)
               }.merge(html_options)
 
       @template.link_to *args, &block
@@ -59,7 +60,7 @@ module ActionView::Helpers
     private
 
     def fields_for_has_many_association_with_template(association_name, association, options, block)
-      name = "#{object_name}[#{association_name}_attributes]"
+      name = "#{object_name}[#{association_name}#{options[:suffix] || "_attributes"}]"
       association = convert_to_model(association)
 
       if association.respond_to?(:persisted?)
@@ -87,24 +88,17 @@ module ActionView::Helpers
 
 
     def nested_model_template name, association_name, options, block
-      for_template = self.options[:for_template]
-
-      # Render the outermost template in a script tag to avoid it from being submited with the form
-      # Render all deeper nested templates as hidden divs as nesting script tags messes up the html.
-      # When nested fields are added with javascript by using a template that contains nested templates,
-      # the outermost nested templates div's are replaced by script tags to prevent those nested templates
-      # fields from form subission.
-      #
-      @template.content_tag( for_template ? :div : :script,
-                             type: for_template ? nil : 'text/html',
-                             id: template_id(association_name),
-                             class: for_template ? 'form_template' : nil,
-                             style: for_template ? 'display:none' : nil ) do
+      @template.content_tag( :template, id: template_id(association_name)) do
         nested_fields_wrapper(association_name, options[:wrapper_tag], options[:legend], options[:wrapper_options]) do
-          association_class = (options[:class_name] || object.public_send(association_name).klass.name).to_s.classify.constantize
+          if options[:abstract]
+            association_class = Struct.new(:to_s, :persisted?).new(association_name, false)
+            options[:include_id] = false
+          else
+            association_class = (options[:class_name] || object.public_send(association_name).klass.name).to_s.classify.constantize.new
+          end
           fields_for_nested_model("#{name}[#{index_placeholder(association_name)}]",
-                                   association_class.new,
-                                   options.merge(for_template: true), block)
+                                   association_class,
+                                   options, block)
         end
       end
     end
@@ -114,7 +108,7 @@ module ActionView::Helpers
     end
 
     def association_path association_name
-      "#{object_name.gsub('][','_').gsub(/_attributes/,'').sub('[','_').sub(']','')}_#{association_name}"
+      options[:abstract] ? "#{object_name}_#{association_name}" : "#{object_name.gsub('][','_').gsub(/_attributes/,'').sub('[','_').sub(']','')}_#{association_name}"
     end
 
     def index_placeholder association_name
