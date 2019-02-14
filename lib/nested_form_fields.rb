@@ -60,7 +60,7 @@ module ActionView::Helpers
     private
 
     def fields_for_has_many_association_with_template(association_name, association, options, block)
-      name = "#{object_name}[#{association_name}_attributes]"
+      name = "#{object_name}[#{association_name}#{options[:suffix] || "_attributes"}]"
       association = convert_to_model(association)
 
       if association.respond_to?(:persisted?)
